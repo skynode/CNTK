@@ -212,11 +212,11 @@ if __name__=='__main__':
         data_path = args['datadir']
     if args['logdir'] is not None:
         log_dir = args['logdir']
-        # Currently we just use CPU since the memory usage is very high for a GPU
-    C.device.try_set_default_device(C.device.cpu())
-    
-    #if args['device'] is not None:
-    #    C.device.try_set_default_device(C.device.gpu(args['device']))
+    if args['device'] is not None:
+        if args['device'] == -1:
+            C.device.try_set_default_device(C.device.cpu())
+        else:
+            C.device.try_set_default_device(C.device.gpu(args['device']))
 
     train_data=os.path.join(data_path, 'train_map.txt')
     test_data=os.path.join(data_path, 'val_map.txt')

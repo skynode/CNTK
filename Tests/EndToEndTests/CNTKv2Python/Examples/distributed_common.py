@@ -22,8 +22,8 @@ sys.path.append(example_dir)
 TOLERANCE_ABSOLUTE = 2E-1
 TIMEOUT_SECONDS = 300
 
-def mpiexec_test(device_id, script, mpiexec_params, params, expected_test_error, match_exactly=True, per_minibatch_tolerance=TOLERANCE_ABSOLUTE, error_tolerance=TOLERANCE_ABSOLUTE, timeout_seconds=TIMEOUT_SECONDS):
-    if cntk_device(device_id).type() != DeviceKind_GPU:
+def mpiexec_test(device_id, script, mpiexec_params, params, expected_test_error, match_exactly=True, per_minibatch_tolerance=TOLERANCE_ABSOLUTE, error_tolerance=TOLERANCE_ABSOLUTE, timeout_seconds=TIMEOUT_SECONDS, using_only_gpu=True):
+    if using_only_gpu and (cntk_device(device_id).type() != DeviceKind_GPU):
        pytest.skip('test only runs on GPU')
 
     cmd = ["mpiexec"] + mpiexec_params + ["python", script] + params

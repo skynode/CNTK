@@ -202,6 +202,7 @@ if __name__=='__main__':
     parser.add_argument('-e', '--epoch_size', help='Epoch size', type=int, required=False, default='1281167')
     parser.add_argument('-q', '--quantized_bits', help='Number of quantized bits used for gradient aggregation', type=int, required=False, default='32')
     parser.add_argument('-r', '--restart', help='Indicating whether to restart from scratch (instead of restart from checkpoint file by default)', action='store_true')
+    parser.add_argument('-device', '--device', type=int, help="Force to run the script on a specified device", required=False, default=None)
 
     args = vars(parser.parse_args())
 
@@ -211,9 +212,11 @@ if __name__=='__main__':
         data_path = args['datadir']
     if args['logdir'] is not None:
         log_dir = args['logdir']
-
-    # Currently we just use CPU since the memory usage is very high for a GPU
-    C.device.try_set_default_device(C.device.cpu())
+    if args['device'] is not None:
+        if args['device'] == -1:
+            C.device.try_set_default_device(C.device.cpu())
+        else:
+            C.device.try_set_default_device(C.device.gpu(args['device']))
 
     if not os.path.isdir(data_path):
         raise RuntimeError("Directory %s does not exist" % data_path)
