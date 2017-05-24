@@ -11,12 +11,13 @@ import argparse
 import numpy as np
 import cntk as C
 import _cntk_py
+import cntk.io.transforms as xforms
 
 from cntk.logging import *
-from cntk.ops import *
-from cntk.distributed import data_parallel_distributed_learner, Communicator
+from cntk.ops import placeholder, minus, constant, relu
+from cntk.train.distributed import data_parallel_distributed_learner, Communicator
 from cntk.io import ImageDeserializer, MinibatchSource, StreamDef, StreamDefs, FULL_DATA_SWEEP
-from cntk.layers import Placeholder, Block, Convolution2D, Activation, MaxPooling, Dense, Dropout, default_options, Sequential, For
+from cntk.layers import Convolution2D, Activation, MaxPooling, Dense, Dropout, default_options, Sequential, For
 from cntk.initializer import normal
 from cntk.train.training_session import *
 
@@ -42,15 +43,15 @@ def create_image_mb_source(map_file, is_training, total_number_of_samples):
     transforms = []
     if is_training:
         transforms += [
-            ImageDeserializer.crop(crop_type='randomside', side_ratio='0.4375:0.875', jitter_type='uniratio') # train uses jitter
+            xforms.crop(crop_type='randomside', side_ratio=0.875, jitter_type='uniratio') # train uses jitter
         ]
     else:
         transforms += [
-            ImageDeserializer.crop(crop_type='center', side_ratio=0.5833333) # test has no jitter
+            xforms.crop(crop_type='center', side_ratio=0.5833333) # test has no jitter
         ]
 
     transforms += [
-        ImageDeserializer.scale(width=image_width, height=image_height, channels=num_channels, interpolations='linear'),
+        xforms.scale(width=image_width, height=image_height, channels=num_channels, interpolations='linear'),
     ]
 
     # deserializer
@@ -116,9 +117,9 @@ def create_vgg19():
             ])(input)
 
     # loss and metric
-    ce = cross_entropy_with_softmax(z, label_var)
-    pe = classification_error(z, label_var)
-    pe5 = classification_error(z, label_var, topN=5)
+    ce = C.cross_entropy_with_softmax(z, label_var)
+    pe = C.classification_error(z, label_var)
+    pe5 = C.classification_error(z, label_var, topN=5)
 
     log_number_of_parameters(z) ; print()
 
@@ -135,12 +136,12 @@ def create_vgg19():
 def create_trainer(network, epoch_size, num_quantization_bits, progress_printer):
     # Set learning parameters
     lr_per_mb         = [0.01]*20 + [0.001]*20 + [0.0001]*20 + [0.00001]*10 + [0.000001]
-    lr_schedule       = C.learning_rate_schedule(lr_per_mb, unit=C.learner.UnitType.minibatch, epoch_size=epoch_size)
-    mm_schedule       = C.learner.momentum_schedule(0.9)
+    lr_schedule       = C.learning_rate_schedule(lr_per_mb, unit=C.learners.UnitType.minibatch, epoch_size=epoch_size)
+    mm_schedule       = C.learners.momentum_schedule(0.9)
     l2_reg_weight     = 0.0005 # CNTK L2 regularization is per sample, thus same as Caffe
 
     # Create learner
-    local_learner = C.learner.momentum_sgd(network['output'].parameters, lr_schedule, mm_schedule, unit_gain=False, l2_regularization_weight=l2_reg_weight)
+    local_learner = C.learners.momentum_sgd(network['output'].parameters, lr_schedule, mm_schedule, unit_gain=False, l2_regularization_weight=l2_reg_weight)
     # Since we reuse parameter settings (learning rate, momentum) from Caffe, we set unit_gain to False to ensure consistency
     parameter_learner = data_parallel_distributed_learner(
         local_learner,
@@ -211,8 +212,11 @@ if __name__=='__main__':
         data_path = args['datadir']
     if args['logdir'] is not None:
         log_dir = args['logdir']
-    if args['device'] is not None:
-        C.device.try_set_default_device(C.device.gpu(args['device']))
+        # Currently we just use CPU since the memory usage is very high for a GPU
+    C.device.try_set_default_device(C.device.cpu())
+    
+    #if args['device'] is not None:
+    #    C.device.try_set_default_device(C.device.gpu(args['device']))
 
     train_data=os.path.join(data_path, 'train_map.txt')
     test_data=os.path.join(data_path, 'val_map.txt')
@@ -227,4 +231,4 @@ if __name__=='__main__':
                          num_mbs_per_log=200,
                          gen_heartbeat=True)
     # Must call MPI finalize when process exit without exceptions
-    cntk.distributed.Communicator.finalize()
+    Communicator.finalize()

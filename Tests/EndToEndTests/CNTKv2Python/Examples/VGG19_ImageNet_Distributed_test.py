@@ -21,11 +21,11 @@ example_dir = os.path.join(abs_path, "..", "..", "..", "..", "Examples", "Image"
 sys.path.append(example_dir)
 from prepare_test_data import prepare_ImageNet_data
 from distributed_common import mpiexec_test
-script_under_test = os.path.join(example_dir, "VGG16_ImageNet_Distributed.py")
+script_under_test = os.path.join(example_dir, "VGG19_ImageNet_Distributed.py")
 
 mpiexec_params = [ "-n", "2"]
 
-def test_VGG16_imagenet_distributed(device_id):
+def test_VGG19_imagenet_distributed(device_id):
     params = [ "-n", "2",
                "-m", "2",
                "-e", "2",
