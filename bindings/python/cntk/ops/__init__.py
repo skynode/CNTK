@@ -8,7 +8,7 @@ from __future__ import print_function
 import numpy as np
 import numbers
 from . import sequence
-from .functions import CloneMethod, Function, load_model, register_native_user_function, native_user_function
+from .functions import CloneMethod, Function, BlockFunction, load_model, register_native_user_function, native_user_function
 from cntk.internal import sanitize_input, sanitize_shape, sanitize_axis, sanitize_dynamic_axes, sanitize_axis_list, typemap, sanitize_pooling_args, sanitize_convolution_args, sanitize_permutation
 from cntk.internal.utils import get_data_type
 from ..axis import Axis
@@ -1686,7 +1686,8 @@ def optimized_rnnstack(operand, weights, hidden_size, num_layers,
                        bidirectional=False, recurrent_op='lstm', name=''):
     '''
     An RNN implementation that uses the primitives in cuDNN.
-    If cuDNN is not available it fails.
+    If cuDNN is not available it fails. You can use :class:`~cntk.misc.optimized_rnnstack_converter.convert_optimized_rnnstack`
+    to convert a model to GEMM-based implementation when no cuDNN.
 
     Args:
         operand: input of the optimized RNN stack.
