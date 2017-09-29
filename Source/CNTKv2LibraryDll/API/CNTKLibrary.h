@@ -4207,6 +4207,7 @@ namespace CNTK
                                      const std::vector<bool>& autoPadding = { true },
                                      const NDShape& dilation = { 1 },
                                      size_t reductionRank = 1,
+                                     size_t groups = 1,
                                      size_t maxTempMemSizeInSamples = 0,
                                      const std::wstring& name = L"");
 
@@ -4610,16 +4611,6 @@ namespace CNTK
     /// Sets globally default unit-gain flag value.
     ///
     CNTK_API void SetDefaultUnitGainValue(bool value);
-
-    ///
-    /// Returns true if by default input gradient to learner is averaged.
-    ///
-    CNTK_API bool DefaultUseMeanGradientValue();
-
-    ///
-    /// Sets globally default useMeanGradient value.
-    ///
-    CNTK_API void SetDefaultUseMeanGradientValue(bool value);
 
     ///
     /// Abstraction for learning a subset of parameters of a learnable Function using first order gradient values.
