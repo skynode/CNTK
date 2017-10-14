@@ -365,7 +365,7 @@ namespace CNTK
             return;
         }
 
-        // build a map of souce funtion to the destination (this) function UIDs.
+        // build a map of souce function to the destination (this) function UIDs.
         map<wstring, wstring> uidMap;
         for (auto i = 0; i < theirUIDs.size(); i++)
             uidMap[theirUIDs[i]] = ourUIDs[i];
@@ -625,6 +625,9 @@ namespace CNTK
                     break;
                 case PrimitiveOpType::Sigmoid:
                     computationNodePtr = New<SigmoidNode<ElementType>>(network->GetDeviceId(), internalNodeName);
+                    break;
+                case PrimitiveOpType::Atanh:
+                    computationNodePtr = New<AtanhNode<ElementType>>(network->GetDeviceId(), internalNodeName);
                     break;
                 case PrimitiveOpType::Tanh:
                     computationNodePtr = New<TanhNode<ElementType>>(network->GetDeviceId(), internalNodeName);

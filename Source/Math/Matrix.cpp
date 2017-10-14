@@ -1844,25 +1844,38 @@ ElemType Matrix<ElemType>::RmsProp(Matrix<ElemType>& gradients,
     DecideAndMoveToRightDevice(*this, gradients);
 
     DISPATCH_MATRIX_ON_FLAG(&gradients, &gradients,
-        { return m_CPUMatrix->RmsProp(*gradients.m_CPUMatrix, RMS_GAMMA, RMS_WGT_INC, RMS_WGT_MAX, RMS_WGT_DEC, RMS_WGT_MIN, needAveMultiplier, initialized); SetDataLocation(CPU); },
-        { return m_GPUMatrix->RmsProp(*gradients.m_GPUMatrix, RMS_GAMMA, RMS_WGT_INC, RMS_WGT_MAX, RMS_WGT_DEC, RMS_WGT_MIN, needAveMultiplier, initialized); SetDataLocation(GPU); },
+        { auto ret = m_CPUMatrix->RmsProp(*gradients.m_CPUMatrix, RMS_GAMMA, RMS_WGT_INC, RMS_WGT_MAX, RMS_WGT_DEC, RMS_WGT_MIN, needAveMultiplier, initialized); SetDataLocation(CPU); return ret; },
+        { auto ret = m_GPUMatrix->RmsProp(*gradients.m_GPUMatrix, RMS_GAMMA, RMS_WGT_INC, RMS_WGT_MAX, RMS_WGT_DEC, RMS_WGT_MIN, needAveMultiplier, initialized); SetDataLocation(GPU); return ret; },
         { NOT_IMPLEMENTED; },
-        { return gradients.m_GPUSparseMatrix->RmsProp(*m_GPUMatrix, RMS_GAMMA, RMS_WGT_INC, RMS_WGT_MAX, RMS_WGT_DEC, RMS_WGT_MIN, needAveMultiplier, initialized); SetDataLocation(GPU); });
+        { auto ret = gradients.m_GPUSparseMatrix->RmsProp(*m_GPUMatrix, RMS_GAMMA, RMS_WGT_INC, RMS_WGT_MAX, RMS_WGT_DEC, RMS_WGT_MIN, needAveMultiplier, initialized); SetDataLocation(GPU); return ret; });
     // Note: Since both 'this' and gradients are changed, we must call SetDataLocation() on 'this' as well.
 }
 
 template <class ElemType>
 void Matrix<ElemType>::AdaDeltaUpdate(Matrix<ElemType>& gradients,
     Matrix<ElemType>& functionValues,
-    ElemType learningRate, ElemType rho, ElemType epsilon)
+    ElemType learningRate, ElemType rho, ElemType epsilon,
+    int* timestamps, int currentTimestamp)
 {
     DecideAndMoveToRightDevice(*this, gradients);
 
     DISPATCH_MATRIX_ON_FLAG(&gradients, &gradients,
-    { return m_CPUMatrix->AdaDelta(*gradients.m_CPUMatrix, *functionValues.m_CPUMatrix, learningRate, rho, epsilon); SetDataLocation(CPU); },
-    { return m_GPUMatrix->AdaDelta(*gradients.m_GPUMatrix, *functionValues.m_GPUMatrix, learningRate, rho, epsilon); SetDataLocation(GPU); },
-    { return gradients.m_CPUSparseMatrix->AdaDelta(*m_CPUMatrix, *functionValues.m_CPUMatrix, learningRate, rho, epsilon); SetDataLocation(CPU); },
-    { return gradients.m_GPUSparseMatrix->AdaDelta(*m_GPUMatrix, *functionValues.m_GPUMatrix, learningRate, rho, epsilon); SetDataLocation(GPU); });
+    { m_CPUMatrix->AdaDelta(*gradients.m_CPUMatrix, *functionValues.m_CPUMatrix, learningRate, rho, epsilon); SetDataLocation(CPU); },
+    { m_GPUMatrix->AdaDelta(*gradients.m_GPUMatrix, *functionValues.m_GPUMatrix, learningRate, rho, epsilon); SetDataLocation(GPU); },
+    { gradients.m_CPUSparseMatrix->AdaDelta(*m_CPUMatrix, *functionValues.m_CPUMatrix, learningRate, rho, epsilon, timestamps, currentTimestamp); SetDataLocation(CPU); },
+    { gradients.m_GPUSparseMatrix->AdaDelta(*m_GPUMatrix, *functionValues.m_GPUMatrix, learningRate, rho, epsilon, timestamps, currentTimestamp); SetDataLocation(GPU); });
+}
+
+template <class ElemType>
+void Matrix<ElemType>::AdaDeltaFlushState(size_t cols, ElemType rho, int* timestamps, int currentTimestamp)
+{
+    DecideAndMoveToRightDevice(*this, *this);
+
+    DISPATCH_MATRIX_ON_FLAG(this, this,
+    { m_CPUMatrix->AdaDeltaFlushTimestamps(cols, rho, timestamps, currentTimestamp); SetDataLocation(CPU); },
+    { m_GPUMatrix->AdaDeltaFlushTimestamps(cols, rho, timestamps, currentTimestamp); SetDataLocation(GPU); },
+    { NOT_IMPLEMENTED; },
+    { NOT_IMPLEMENTED; });
 }
 
 template <class ElemType>
@@ -2847,6 +2860,39 @@ Matrix<ElemType>& Matrix<ElemType>::AssignTanhOf(const Matrix<ElemType>& a)
                             m_GPUMatrix->AssignTanhOf(*a.m_GPUMatrix),
                             NOT_IMPLEMENTED,
                             m_GPUSparseMatrix->AssignTanhOf(*a.m_GPUSparseMatrix));
+
+    return *this;
+}
+
+//[this]=atanh([this]) element wise
+template <class ElemType>
+Matrix<ElemType>& Matrix<ElemType>::InplaceAtanh()
+{
+    DISPATCH_MATRIX_ON_FLAG(this,
+                            this,
+                            m_CPUMatrix->InplaceAtanh(),
+                            m_GPUMatrix->InplaceAtanh(),
+                            NOT_IMPLEMENTED,
+                            NOT_IMPLEMENTED);
+
+    return *this;
+}
+
+template <class ElemType>
+Matrix<ElemType>& Matrix<ElemType>::AssignAtanhOf(const Matrix<ElemType>& a)
+{
+    if (a.IsEmpty())
+        LogicError("AssignAtanhOf: Matrix a is empty.");
+
+    DecideAndMoveToRightDevice(a, *this);
+    SwitchToMatrixType(a.GetMatrixType(), a.GetFormat(), false);
+
+    DISPATCH_MATRIX_ON_FLAG(&a,
+                            this,
+                            m_CPUMatrix->AssignAtanhOf(*a.m_CPUMatrix),
+                            m_GPUMatrix->AssignAtanhOf(*a.m_GPUMatrix),
+                            NOT_IMPLEMENTED,
+                            NOT_IMPLEMENTED);
 
     return *this;
 }
@@ -4014,7 +4060,7 @@ MatrixFormat Matrix<ElemType>::GetFormat() const
 // BUGBUG: This performs a copy operation even for the output matrix that gets overwritten right away.
 //         We should (1) define which is the output and (2) whether it will be completely overwritten (so we won't actually copy it).
 // bring two matrices onto the same device
-// If different and prefered devices are the same, move to preferred device.
+// If different and preferred devices are the same, move to preferred device.
 // Otherwise GPU takes precedence over CPU, and if both are GPU move to a's device.
 // The inputs are only distinguished in that a's GPU takes precedence over b's in case they differ.
 // TODO: This is called somewhat inconsistently, sometimes with a=*this, sometimes with b=*this.
