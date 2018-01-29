@@ -2098,14 +2098,14 @@ namespace CNTK
 
             FunctionPtr classificationErrorComposite;
             if (axis == Axis(0))
-                classificationErrorComposite = Minus(Constant::Scalar(1.0f), TransposeTimes(labelPlaceholder, Hardmax(predictionPlaceholder)));
+                classificationErrorComposite = Minus(Constant::Scalar(prediction.GetDataType(), 1.0), TransposeTimes(labelPlaceholder, Hardmax(predictionPlaceholder)));
             else
             {
                 auto axMax = ReduceMax(predictionPlaceholder, axis);
                 auto pred = Equal(predictionPlaceholder, axMax);
                 auto wrongPred = NotEqual(labelPlaceholder, pred);
                 auto axErr = ReduceSum(wrongPred, axis);
-                auto capErr = GreaterEqual(axErr, Constant::Scalar(1.0f));
+                auto capErr = GreaterEqual(axErr, Constant::Scalar(prediction.GetDataType(), 1.0));
                 classificationErrorComposite = ReduceMean(capErr, Axis::AllStaticAxes());
             }
 
@@ -2131,6 +2131,26 @@ namespace CNTK
         additionalProperties[PrimitiveFunction::AttributeNameTokensToIgnore] = AsDictionaryValueVector(tokensToIgnore);
 
         return BinaryOp(PrimitiveOpType::EditDistanceError, prediction, labels, std::move(additionalProperties), name);
+    }
+
+    FunctionPtr LatticeSequenceWithSoftmax(const Variable& labels, const Variable& prediction, const Variable& scaledLogLikelihood, const Variable& lattice, const std::wstring& symListPath, const std::wstring& phonePath, const std::wstring& stateListPath, const std::wstring& transProbPath, float hSmoothingWeight, float frameDropThresh, bool doReferenceAlign, bool seqGammarUsesMBR, float seqGammarAMF, float seqGammarLMF, float seqGammarBMMIFactor, float seqGammarWordPen, const std::wstring& name)
+    {
+        auto additionalProperties = Dictionary();
+        additionalProperties[PrimitiveFunction::AttributeNameSymListPath] = symListPath;
+        additionalProperties[PrimitiveFunction::AttributeNamePhonePath] = phonePath;
+        additionalProperties[PrimitiveFunction::AttributeNameStateListPath] = stateListPath;
+        additionalProperties[PrimitiveFunction::AttributeNameTransProbPath] = transProbPath;
+        additionalProperties[PrimitiveFunction::AttributeNameHSmoothingWeight] = hSmoothingWeight;
+        additionalProperties[PrimitiveFunction::AttributeNameFrameDropThresh] = frameDropThresh;
+        additionalProperties[PrimitiveFunction::AttributeNameDoReferenceAlign] = doReferenceAlign;
+        additionalProperties[PrimitiveFunction::AttributeNameSeqGammarUsesMBR] = seqGammarUsesMBR;
+        additionalProperties[PrimitiveFunction::AttributeNameSeqGammarAMF] = seqGammarAMF;
+        additionalProperties[PrimitiveFunction::AttributeNameSeqGammarLMF] = seqGammarLMF;
+        additionalProperties[PrimitiveFunction::AttributeNameSeqGammarBMMIFactor] = seqGammarBMMIFactor;
+        additionalProperties[PrimitiveFunction::AttributeNameSeqGammarWordPen] = seqGammarWordPen;
+        std::vector<Variable> operands = { labels, prediction, scaledLogLikelihood, lattice };
+
+        return AsComposite(MakeSharedObject<PrimitiveFunction>(PrimitiveOpType::LatticeSequenceWithSoftmax, operands, std::move(additionalProperties), name), name);
     }
 
     FunctionPtr ForwardBackward(const Variable& graph, const Variable& features, size_t blankTokenId, int delayConstraint, const std::wstring& name)
@@ -2916,6 +2936,17 @@ namespace CNTK
         return AsComposite(MakeSharedObject<PrimitiveFunction>(
             PrimitiveOpType::Crop,
             operands, Dictionary(), name), name);
+    }
+
+    FunctionPtr Cast(const Variable& nodeInput, DataType outputType, const std::wstring& name)
+    {
+        std::vector<Variable> operands = { nodeInput };
+        Dictionary additionalAttributes;
+        additionalAttributes.Add(
+                PrimitiveFunction::AttributeNameNewDataType, static_cast<int>(outputType));
+        return AsComposite(MakeSharedObject<PrimitiveFunction>(
+            PrimitiveOpType::Cast,
+            operands, std::move(additionalAttributes), name), name);
     }
 
     namespace Internal
