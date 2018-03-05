@@ -70,7 +70,7 @@ namespace ONNX
             { L"epsilon", "epsilon" },
             // { L"", "momentum" },
         } } },
-        // from ONNX experiament, added to test Caffe models
+        // from ONNX experiment, added to test Caffe models
         // TODO: set key as BatchNormalization instead of BatchNormalizationCaffe
         { L"BatchNormalizationCaffe",{ {
             { L"BatchNormalization", "SpatialBN" },
@@ -78,7 +78,13 @@ namespace ONNX
             // { L"", "is_test" },
             { L"epsilon", "epsilon" },
             // { L"", "momentum" },
-            } } },
+        } } },
+        { L"LayerNormalization",{ {
+            { L"LayerNormalization", "LayerNormalization" },
+            { L"initial_scale", "initial_scale" },
+            { L"initial_bias", "initial_bias" },
+            { L"epsilon", "epsilon" },
+        } } },
         { L"LocalResponseNormalization",{ {
             { L"LocalResponseNormalization", "LRN" },
             { L"size", "size" },
@@ -344,6 +350,7 @@ namespace ONNX
             } } },
         { L"Gather", { {
             { L"Gather", "Gather" },
+            { L"axis", "axis" },
         } } },
         { L"DepthToSpace",{ {
             { L"DepthToSpace", "DepthToSpace" },
@@ -355,6 +362,14 @@ namespace ONNX
             { L"Squeeze", "Squeeze" },
             { L"axes", "axes" },
         } } },
+        { L"ImageScaler",{ {
+            { L"ImageScaler", "ImageScaler" },
+            } } },
+        { L"MeanVarianceNormalization",{ {
+            { L"MeanVarianceNormalization", "MeanVarianceNormalization" },
+            { L"useStatsAcrossChannels", "across_channels" },
+            { L"doVarianceScaling", "normalize_variance" },
+            } } },
     };
 
     // given a cntkOpName and cntk attribute OpName which is saved in CNTK::Function's attribute,
@@ -375,13 +390,44 @@ namespace ONNX
         return itNodeFn->second;
     }
 
+    std::tuple<int, int> Operators::GetElementWiseInputIndices(const std::wstring& opName)
+    {
+        if (!SupportBroadcast(opName))
+        {
+            LogicError("Calling GitElementWiseInputIndices with invalid op: %s", ToString(opName).c_str());
+        }
+
+        int index0 = 0;
+        while (!IsValidInputs(opName, index0))
+        {
+            index0++;
+        }
+
+        int index1 = index0 + 1;
+        while (!IsValidInputs(opName, index1))
+        {
+            index1++;
+        }
+
+        return make_tuple(index0, index1);
+    }
     bool Operators::SupportBroadcast(const std::wstring& cntkOpName)
     {
         return (cntkOpName == L"Plus") || (cntkOpName == L"Minus") ||
             (cntkOpName == L"ElementTimes") || (cntkOpName == L"ElementDivide") ||
             (cntkOpName == L"And") || (cntkOpName == L"Or") || (cntkOpName == L"Xor");
     }
+
+    bool Operators::SupportBroadcastONNXOp(const std::string& onnxOpName)
+    {
+        return (onnxOpName == "Add") || (onnxOpName == "Sub") ||
+            (onnxOpName == "Mul") || (onnxOpName == "Div") ||
+            (onnxOpName == "And") || (onnxOpName == "Or") || (onnxOpName == "Xor");
+    }
+
+
         std::unordered_map<std::wstring, std::set<size_t>> Operators::_cntkBlockOPInvalidIndices = {
+            { L"Clip",{ 1, 2 } },
             { L"LeakyReLU",{ 0, 1 } },
             { L"SELU",{ 0, 1, 2 } },
             { L"PReLU",{ 0 } },
@@ -397,6 +443,8 @@ namespace ONNX
             { L"Not",{ 0, 1 } },
             { L"Softplus",{ 0 } },
             { L"Softsign",{ 0 } },
+            { L"ImageScaler",{ 0, 1, 2, 3 } },
+            { L"MeanVarianceNormalization",{ 0 } },
         };
 
         std::unordered_map<std::wstring, std::vector<int>> Operators::_cntkToONNXInputIndices = {
@@ -404,6 +452,8 @@ namespace ONNX
             { L"ConvolutionTranspose",{ 1, 0 } },
             { L"BatchNormalization",{ 0, 1, 2, 3, 4, -1 } },
             { L"Times",{ 1, 0 } },
+            { L"Gather",{ 1, 0 } },
+            { L"PReLU",{ 1, 0 } },
         };
 
         //

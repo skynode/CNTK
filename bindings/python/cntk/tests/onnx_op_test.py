@@ -199,7 +199,7 @@ def test_AveragePool(tmpdir):
     x = C.input_variable(img.shape)
     model = C.pooling(x, C.AVG_POOLING, (2,2), (2,2))
 
-    verify_one_input(model, img, tmpdir, 'AveragePool')
+    verify_one_input(model, img, tmpdir, 'AveragePool_1')
 
 #BatchNormalization
 def test_BatchNormalization(tmpdir):
@@ -280,7 +280,21 @@ def test_Concat(tmpdir):
 
     model = C.splice(x, y, axis=1)
 
-    verify_one_input(model, data1, tmpdir, 'Concat__1')
+    verify_one_input(model, data1, tmpdir, 'Concat_1')
+
+def test_ConvTranspose(tmpdir):
+    # Keep the shapes below as they are, because this tests an earlier bug.
+    input_shape = (48, 16, 16) 
+    img = np.reshape(np.arange(np.prod(input_shape), dtype = np.float32), input_shape) 
+
+    x = C.input_variable(input_shape)
+
+    kernel_shape = (48, 32, 3, 3) # For convolution_transpose the shape is (I x O x W x H)
+    kernel = C.constant(value = np.ones(shape=(kernel_shape), dtype = np.float32))
+
+    conv_trans_model = C.convolution_transpose(kernel, x, strides=(2, 2), output_shape=(32, 32, 32), auto_padding = [False, True, True])
+
+    verify_one_input(conv_trans_model, img, tmpdir, 'ConvTranspose_0')
 
 # DepthToSpace
 def test_DepthToSpace(tmpdir):
@@ -297,14 +311,37 @@ def test_DepthToSpace(tmpdir):
 
 #Div
 def test_Div(tmpdir):
-    data0 = np.asarray([1., 1., 1., 1.], dtype=np.float32)
-    data1 = np.asarray([0.5, 0.25, 0.125, 0.], dtype=np.float32)
-    model = C.element_divide(data0, data1)
-    verify_no_input(model, tmpdir, 'Div_0')
+    def run_div_test(shape1, shape2, tmpdir):
+        broadcast = 'no_broadcast'
+        if (shape1 != shape2):
+            broadcast = 'with_broadcast'
 
-    x = C.input_variable(data0.shape)
-    model = C.element_divide(x, data1)
-    verify_one_input(model, data0, tmpdir, 'Div_1')
+        data1 = np.random.rand(*shape1).astype(np.float32)
+        data2 = np.random.rand(*shape2).astype(np.float32)
+
+        x = C.input_variable(shape1)
+        y = C.input_variable(shape2)
+
+        model = C.element_divide(data1, data2)
+        verify_no_input(model, tmpdir, 'Div_' + broadcast + '_d1d2')
+
+        model = C.element_divide(x, data2)
+        verify_one_input(model, data1, tmpdir, 'Div_' + broadcast + '_xd2')
+
+        model = C.element_divide(data1, y)
+        verify_one_input(model, data2, tmpdir, 'Div_' + broadcast + '_d1y')
+
+        model = C.element_divide(x, y)
+        verify_two_input(model, data1, data2, tmpdir, 'Div_' + broadcast + '_xy')
+
+    shape1 = (2, 3, 4, 5)
+    shape2 = shape1
+    # without broadcast
+    run_div_test(shape1, shape2, tmpdir)
+
+    # with broadcast
+    shape2 = (1, 3, 1, 1)
+    run_div_test(shape1, shape2, tmpdir)
 
 #Dropout
 def test_Dropout(tmpdir):
@@ -373,6 +410,16 @@ def test_Gather(tmpdir):
     model = C.gather(y, x)
     verify_one_input(model, c, tmpdir, 'Gather_1')
 
+#Gather
+def test_Gather_With_Axis(tmpdir):
+    data = np.asarray( [[ [111, 112], [121, 122], [131, 132], ],[ [211, 212], [221, 222], [231, 232], ]]).astype('f')
+    indices = np.asarray( [ [0, 1, 1], [1, 1, 1]])
+    x = C.input_variable(np.shape(data))
+    y = C.input_variable(np.shape(indices))
+    axis = 1
+    model = C.gather(data, y, axis)
+    verify_one_input(model, indices, tmpdir, 'Gather_With_Axis_1')
+
 #Greater
 def test_Greater(tmpdir):
     model = C.greater([41., 42., 43.], [42., 42., 42.])
@@ -394,6 +441,45 @@ def test_HardSigmiod(tmpdir):
 
     data = np.random.rand(*shape).astype(np.float32)
     verify_one_input(model, data, tmpdir, 'HardSigmoid_1')
+
+#ImageScaler
+def test_ImageScaler(tmpdir):
+    input_height = 32
+    input_width = 32
+    channels = 3
+    image = np.ones([channels, input_height, input_width]).astype(np.float32)
+    scalar = 1.5
+    bias = [10, 20, 30]
+
+    model = C.image_scaler(image, scalar, bias);
+    verify_no_input(model, tmpdir, 'ImageScaler_0')
+
+    x = C.input_variable(np.shape(image)) 
+    model = C.image_scaler(x, scalar, bias);
+    verify_one_input(model, image, tmpdir, 'ImageScaler_1')
+
+#LayerNormalization
+def test_LayerNormalization(tmpdir):
+    # This test point tests the LayerNormalization round trip with defaultepsilon. We loose always the epsilon value when 
+    # exporting to ONNX (because ONNX MeanVarianceNormalization does not have an epsilon attribute). When loading back 
+    # from ONNX, CNTK always uses the default eposilon value (0.00001). That's why test below has the default epsilon 
+    # value. It is not expected to pass with any other epsilon value until something changes.
+    test_shapes = [(3, 5, 7), (10, ), (20, 31)]
+    for shape in test_shapes:
+        data = np.reshape(np.arange(np.prod(shape), dtype = np.float32), shape)
+        input_operand = C.input_variable(shape=shape)        
+        model0 = C.layers.LayerNormalization(initial_scale=1, initial_bias=2, epsilon=0.00001)(input_operand)
+        verify_one_input(model0, data, tmpdir, 'LayerNorm_0')
+
+    # This test point tests especially with epsilon = 0, because that creates a graph with 
+    # different number of ops. However, we don't expect the numbers to match in round trip
+    # because we only support default epislon (0.00001) when loading from ONNX. Therefore,
+    # this is just a load/save test.
+    model1 = C.layers.LayerNormalization(epsilon=0.0)(input_operand)
+    filename = os.path.join(str(tmpdir), R'LayerNorm_1.onnx')
+    model1.save(filename, format=C.ModelFormat.ONNX)
+    loaded_model = C.Function.load(filename, format=C.ModelFormat.ONNX)
+    assert model1.shape == loaded_model.shape
 
 #LeakyRelu
 def test_LeakyRelu(tmpdir):
@@ -489,6 +575,29 @@ def test_Mean(tmpdir):
 
     verify_two_input(model, in1_data, in2_data, tmpdir, 'Mean_2')
     
+#MeanVarianceNormalization
+def test_MeanVarianceNormalization(tmpdir):
+    shape = (3, 5, 7)
+    data = np.reshape(np.arange(np.prod(shape), dtype = np.float32), shape)
+
+    input_operand = C.input_variable(shape=shape)
+
+    model0 = C.mean_variance_normalization(input_operand, use_stats_across_channels=False, do_variance_scaling=True)
+    verify_one_input(model0, data, tmpdir, 'MVN_0')
+
+    model1 = C.mean_variance_normalization(input_operand, use_stats_across_channels=False, do_variance_scaling=False)
+    verify_one_input(model1, data, tmpdir, 'MVN_1')
+
+    model2 = C.mean_variance_normalization(input_operand, use_stats_across_channels=True, do_variance_scaling=True)
+    verify_one_input(model2, data, tmpdir, 'MVN_2')
+
+    # The test below tests the round trip with epsilon. We loose always the epsilon value when exporting to ONNX
+    # (because ONNX MeanVarianceNormalization does not have an epsilon attribute). When loading back from ONNX, CNTK
+    # always uses the default eposilon value (0.00001). That's why test below has the default epsilon value. It is 
+    # not expected to pass with any other epsilon value until something changes.
+    model3 = C.mean_variance_normalization(input_operand, epsilon=0.00001, use_stats_across_channels=False, do_variance_scaling=True) 
+    verify_one_input(model3, data, tmpdir, 'MVN_3')
+
 #Min
 def test_Min(tmpdir):
     data0 = np.asarray([1., 1., 1., 1.], dtype=np.float32)
@@ -520,14 +629,14 @@ def test_Pad(tmpdir):
     x = C.input_variable(shape)
     model = C.pad(x, pattern=[(1,1),(2,2)], mode=C.ops.REFLECT_PAD)
 
-    verify_one_input(model, data, tmpdir, 'Pad_1')    
+    verify_one_input(model, data, tmpdir, 'Pad_1')
 
 #PRelu
-def test_PRelu(tmpdir):
-    data = np.asarray([[-1, -0.5, 0, 1, 2]])
-    alpha = C.constant(value=[[0.5, 0.5, 0.5, 0.5, 0.5]])
-    model = C.param_relu(alpha, data)
-    verify_no_input(model, tmpdir, 'PRelu_0')
+#def test_PRelu(tmpdir):
+#    data = np.asarray([[-1, -0.5, 0, 1, 2]])
+#    alpha = C.constant(value=[[0.5, 0.5, 0.5, 0.5, 0.5]])
+#    model = C.param_relu(alpha, data)
+#    verify_no_input(model, tmpdir, 'PRelu_0')
 
 #Pow
 def test_Pow(tmpdir):
@@ -620,10 +729,17 @@ def test_Sigmoid(tmpdir):
 
 #Slice
 def test_Slice(tmpdir):
-    data = np.asarray([[[1,2,-3], [4, 5, 6]]],dtype=np.float32)
+    data = np.asarray([[1,2,-3], [4, 5, 6]],dtype=np.float32)
     x1 = C.input_variable((2,3))
+
+    model = C.slice(data, 0, 1, 2)
+    verify_no_input(model, tmpdir, 'Slice_0')
+
     model = C.slice(x1, 0, 1, 2)
-    verify_one_input(model, data, tmpdir, 'Slice_0')
+    verify_one_input(model, data, tmpdir, 'Slice_1')
+
+    model = C.slice(x1, [0,1], [1,0], [2,1]);
+    verify_one_input(model, data, tmpdir, 'Slice2_1')
 
 #Softmax
 def test_Softmax(tmpdir):
@@ -688,9 +804,27 @@ def test_Tanh(tmpdir):
 
 #Transpose
 def test_Transpose(tmpdir):
-    a = np.arange(24).reshape(2,3,4).astype('f')
-    model = C.transpose(a, perm=(2, 0, 1))
+    data = np.arange(24).reshape(2,3,4).astype('f')
+    x = C.input_variable(np.shape(data))
+
+    model = C.transpose(data, perm=(2, 0, 1))
     verify_no_input(model, tmpdir, 'Transpose_0')
 
+    model = C.transpose(x, perm=(2, 0, 1))
+    verify_one_input(model, data, tmpdir, 'Transpose_1')
 
+    model = C.transpose(x, perm=(0, 2, 1))
+    verify_one_input(model, data, tmpdir, 'Transpose_1_2')
+
+#Transpose
+def test_TransposeAxes(tmpdir):
+    data = [[[0,1],[2,3],[4,5]]]
+    model = C.swapaxes(data, 1, 2)
+    verify_no_input(model, tmpdir, 'TransposeAxes_0')
+
+    # TODO: there is probably a bug in C.swapaxes which does not allow 
+    # evaluation of model with data
+    #x = C.input_variable(np.shape(data))
+    #model = C.swapaxes(x, 1, 2)
+    #verify_one_input(model, data, tmpdir, 'TransposeAxes_1')
 

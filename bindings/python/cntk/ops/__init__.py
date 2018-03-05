@@ -1412,10 +1412,10 @@ def selu(x, scale=1.0507009873554804934193349852946, alpha=1.6732632423543772848
 
 
 @typemap
-def leaky_relu(x, name=''):
+def leaky_relu(x, alpha = 0.01, name=''):
     '''
     Leaky Rectified linear operation. Computes the element-wise leaky rectified linear
-    of ``x``: ``max(x, 0)`` for ``x >= 0`` and ``x``: ``0.01*x`` otherwise.
+    of ``x``: ``max(x, 0)`` for ``x >= 0`` and ``x``: ``alpha*x`` otherwise.
 
     The output tensor has the same shape as ``x``.
 
@@ -1425,6 +1425,7 @@ def leaky_relu(x, name=''):
 
     Args:
         x (`numpy.array` or :class:`~cntk.ops.functions.Function`): any :class:`~cntk.ops.functions.Function` that outputs a tensor.
+        alpha (float): the alpha term of the above equation.
         name (`str`, default to ''): the name of the Function instance in the network
 
     Returns:
@@ -1433,7 +1434,7 @@ def leaky_relu(x, name=''):
     '''
     from cntk.cntk_py import leaky_re_lu
     x = sanitize_input(x)
-    return leaky_re_lu(x, name)
+    return leaky_re_lu(x, alpha, name)
 
 @typemap
 def param_relu(alpha, x, name=''):
@@ -3135,6 +3136,24 @@ def reduce_sum_square(x, axis=None, keepdims = True, name=''):
     return reduce_sum_square(x, axis, keepdims, name)
 
 @typemap
+def image_scaler(x, scalar, biases, name=''):
+    '''
+    Alteration of image by scaling its individual values.
+
+    Args:
+        x (`numpy.array` or :class:`~cntk.ops.functions.Function`): any :class:`~cntk.ops.functions.Function` that outputs a tensor.
+        scalar (float): Scalar channel factor.
+        bias (numpy array): Bias values for each channel.
+
+    Returns:
+        cntk.ops.functions.Function:
+        An instance of :class:`~cntk.ops.functions.Function`
+    '''
+    from cntk.cntk_py import image_scaler
+    x = sanitize_input(x)
+    return image_scaler(x, scalar, biases, name)
+
+@typemap
 def argmax(x, axis=None, name=''):
     '''
     Computes the argmax of the input tensor's elements across the specified axis.
@@ -3894,3 +3913,49 @@ def cast(node_input, dtype, name=''):
     arg_node_input = sanitize_input(node_input, get_data_type(node_input))
     arg_dtype = sanitize_dtype_cntk(dtype)
     return cast(arg_node_input, arg_dtype, name)
+
+@typemap
+def mean_variance_normalization(operand, epsilon=0.00001, use_stats_across_channels=False, do_variance_scaling=True, name=''):
+    '''
+    Computes mean-variance normalization of the specified input operand. 
+
+    This operation computes and mean and variance for the entire tensor if use_stats_across_channels is True. 
+    If use_stats_across_channels is False the computes mean and variance per channel and normalizes each 
+    channel with its own mean and variance. If do_variance_scaling is False, only the mean is subtracted,
+    and the variance scaling is omitted.
+    
+    Example:
+        >>> data = np.array([[[0., 2], [4., 6.]], [[0., 4], [8., 12.]]]).astype(np.float32)
+        >>> data
+        array([[[  0.,   2.],
+                [  4.,   6.]],
+        <BLANKLINE>
+               [[  0.,   4.],
+                [  8.,  12.]]], dtype=float32)
+        >>> saved_precision = np.get_printoptions()['precision']
+        >>> np.set_printoptions(precision=4) # For consistent display upto 4 decimals.
+        >>> C.mean_variance_normalization(data).eval()
+        array([[[-1.3416, -0.4472],
+                [ 0.4472,  1.3416]],
+        <BLANKLINE>
+               [[-1.3416, -0.4472],
+                [ 0.4472,  1.3416]]], dtype=float32)
+        >>> np.set_printoptions(precision=saved_precision) # Reseting the display precision.
+
+    Args:
+        operand: Input tensor, with dimensions :math:`[C \\times H \\times W]`.
+        epsilon (double, default 0.00001): epsilon added to the standard deviation to avoid division by 0.
+        use_stats_across_channels (bool): If False, mean and variance are computed per channel.
+         If True, mean and variance are computed over the entire tensor (all axes).
+        do_variance_scaling (bool): If False, only the mean is subtracted. If True, it is also
+         scaled by inverse of standard deviation.
+        name (str, optional): the name of the Function instance in the network
+    Returns:
+        :class:`~cntk.ops.functions.Function`
+    
+    '''
+    from cntk.cntk_py import mean_variance_normalization
+    if epsilon < 0:
+        raise ValueError('epsilon must be non-negative.')
+    operand = sanitize_input(operand, get_data_type(operand))  
+    return mean_variance_normalization(operand, epsilon, use_stats_across_channels, do_variance_scaling, name)
