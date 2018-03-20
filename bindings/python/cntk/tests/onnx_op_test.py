@@ -7,6 +7,8 @@ import os
 import numpy as np
 import cntk as C
 import pytest
+from cntk.ops.tests.ops_test_utils import cntk_device
+from itertools import product
 
 #############
 #helpers
@@ -58,6 +60,11 @@ def verify_one_input(model, data, tmpdir, name):
 
     o0 = model.eval({model.arguments[0]:data})
     o1 = loaded_model.eval({loaded_model.arguments[0]:data})
+
+    if (type(o0) is list):
+        o0 = o0[0]
+    if (type(o1) is list):
+        o1 = o1[0]
 
     assert np.allclose(o0, o1)
 
@@ -425,6 +432,43 @@ def test_Greater(tmpdir):
     model = C.greater([41., 42., 43.], [42., 42., 42.])
     verify_no_input(model, tmpdir, 'Greater_0')
 
+#GRU
+def MakeGRUNameFromConfig(backward, initial_state, activtion):
+    model_name = 'GRU.' + activtion.__name__
+    if (initial_state != 0):
+        model_name += '.initial'
+    if (backward):        
+        model_name += '.backward'
+    else:    
+        model_name += '.forward'
+    return model_name 
+
+direction_options = [False, True]
+activation_options = [C.tanh]
+initial_state_options = [0]
+
+input_dim = 2
+cell_dim = 3
+batch_size = 1
+sequence_len = 5
+
+def test_GRU(tmpdir):
+    for config in list(product(direction_options, initial_state_options, activation_options)):
+        model_filename = MakeGRUNameFromConfig(*config)
+        print(model_filename)
+        backward, initial_state, activation =  config
+    
+        x = C.input_variable(input_dim, dynamic_axes=[C.Axis.default_batch_axis(), C.Axis('sequenceAxis')]) 
+        GRUModel = C.layers.Recurrence(C.layers.GRU(cell_dim,     
+                                                    activation = activation),   
+                                       initial_state = initial_state,    
+                                       go_backwards=backward)(x)
+        #CLG.plot(GRUModel, filename=cntk_pdf_filename)
+        #plot_block_internals(GRUModel, 'GRU', model_filename)
+        data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, sequence_len, input_dim)).astype('f')
+        verify_one_input(GRUModel, data, tmpdir, model_filename)
+
+
 #Hardmax
 def test_Hardmax(tmpdir):
     data = np.asarray([1., 1., 2., 3.], dtype=np.float32)
@@ -514,6 +558,58 @@ def test_LRN(tmpdir):
     x_r = C.input_variable(shape=img_shape, dtype=np.float32)
     model = C.local_response_normalization(x_r, 2, 1.0, 0.0001, 0.75)
     verify_one_input(model, img, tmpdir, 'LRN_1')
+
+#LSTM
+def CreateLSTMModel(activation, 
+                    peepholes, 
+                    self_stabilization, 
+                    cell_dim, 
+                    initial_state):  
+    return C.layers.Sequential([  
+        C.layers.Recurrence(C.layers.LSTM(cell_dim,  
+                                          use_peepholes = peepholes,  
+                                          activation = activation,     
+                                          enable_self_stabilization = self_stabilization),     
+                            initial_state = initial_state) 
+        ])
+
+# lstm attributes
+use_peepholes_options = [False]
+enable_self_stabilization_options = [False]
+activation_options = [C.tanh]
+
+#Recurrence attributes
+initial_state_options = [0]
+
+input_dim = 2
+cell_dim = 3
+batch_size = 1
+sequence_len = 5
+
+def MakeLSTMNameFromConfig(use_peepholes, enable_self_stabilization, initial_state, activtion):
+    model_name = 'LSTM.' + activtion.__name__
+    if (use_peepholes):    
+        model_name += '.peephole'
+    if(enable_self_stabilization):        
+        model_name += '.stabilize'
+    if (initial_state != 0):
+        model_name += '.initial'
+    return model_name 
+
+def test_LSTM(tmpdir):
+    for config in list(product(use_peepholes_options, enable_self_stabilization_options, 
+                               initial_state_options, activation_options)):
+        model_filename = MakeLSTMNameFromConfig(*config)
+        use_peepholes, enable_self_stabilization, initial_state, activation =  config
+    
+        x = C.input_variable(input_dim, dynamic_axes=[C.Axis.default_batch_axis(), C.Axis('sequenceAxis')]) 
+        LSTMmodel = CreateLSTMModel(peepholes = use_peepholes,   
+                                    activation = activation,
+                                    initial_state = initial_state,
+                                    cell_dim = cell_dim,
+                                    self_stabilization = enable_self_stabilization)(x)
+        data = np.random.uniform(low=0.0, high=1.0, size=(batch_size, sequence_len, input_dim)).astype('f')
+        verify_one_input(LSTMmodel, data, tmpdir, model_filename)
 
 #MatMul
 def test_MatMul(tmpdir):
@@ -617,6 +713,23 @@ def test_Neg(tmpdir):
     data0 = np.asarray([1., -1., -2., 1.], dtype=np.float32)
     model = C.negate(data0)
     verify_no_input(model, tmpdir, 'Neg_0')
+
+#OptimizedRNNStack
+OPTIM_RNN_STACK_CONFIGS = ((True, 2, 2, 3), (True, 2, 4, 8), (True, 2, 6, 8), 
+                    (True, 4, 2, 3), (False, 2, 2, 3))
+@pytest.mark.parametrize("bidirectional, num_layers, input_size, hidden_size", OPTIM_RNN_STACK_CONFIGS)
+def test_OptimizedRNNStack(bidirectional, num_layers, input_size, hidden_size, tmpdir, device_id):
+    if device_id == -1:
+        pytest.skip('Test only runs on GPU')
+    dev = cntk_device(device_id)    
+    from _cntk_py import constant_initializer
+    model_filename = 'optimized_rnn_stack_' + ('bi' if bidirectional else 'uni') + '_layers' + str(num_layers) + '_inp' + str(input_size) + '_hid' + str(hidden_size)
+    W = C.parameter((C.InferredDimension, input_size), constant_initializer(0.1), device=dev)
+    x = C.sequence.input_variable(shape=(input_size,))
+    s = np.asarray(np.random.uniform(-1, 1, (5,input_size)), dtype=np.float32)
+    f = C.optimized_rnnstack(x, W, hidden_size, num_layers, bidirectional=bidirectional, name='MyRnnStack')
+    f.parameters[0].value = np.reshape(np.arange(np.prod(f.parameters[0].value.shape), dtype=np.float32), f.parameters[0].value.shape)
+    verify_one_input(f, s, tmpdir, model_filename)
 
 #Pad
 def test_Pad(tmpdir):

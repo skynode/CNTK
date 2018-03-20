@@ -1975,6 +1975,13 @@ namespace CNTK
                 [](const Axis& axis) { return (axis == Axis::DefaultBatchAxis()); });
         }
 
+        bool HasSequenceAxis() const {
+            return (DynamicAxes().size() - (HasBatchAxis() ? 1 : 0)) > 0;
+        }
+
+        bool IsInitialized() const {
+            return m_dataFields != nullptr;
+        }
         ///
         /// Returns the name of 'this' variable
         ///
@@ -2462,9 +2469,9 @@ namespace CNTK
     public:
 
         ///
-        /// a special index for one hot to indicate zero vector
+        /// a special index for one hot to indicate zero vector, put in 32-bit range for C# binding
         ///
-        static const size_t OneHotSkip = (size_t)-1;
+        static const size_t OneHotSkip = (size_t)0xffffffff;
 
         ///
         /// A multi-dimensional value with no mask.
@@ -6133,7 +6140,7 @@ namespace CNTK
     ///
     /// Built-in MPI-based communicator.
     ///
-    CNTK_API DistributedCommunicatorPtr MPICommunicator(size_t packThresholdSizeInBytes = Internal::DefaultPackThresholdSizeInBytes());
+    CNTK_API DistributedCommunicatorPtr MPICommunicator(size_t packThresholdSizeInBytes = Internal::GetMPIPackThreshold());
 
     ///
     /// Distributed communicator that allows quantized aggregations.

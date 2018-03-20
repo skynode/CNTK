@@ -12,6 +12,13 @@ IS_WINDOWS = platform.system() == 'Windows'
 
 IS_PY2 = sys.version_info.major == 2
 
+# Utility function to read the specified file, located in the current directory, into memory
+# It is useful to separate markdown texts from distutils/setuptools source code
+def read_file(fname):
+    with open(os.path.join(os.path.dirname(__file__), fname)) as f:
+        content = f.read()
+    return content
+
 # TODO should handle swig path specified via build_ext --swig-path
 if os.system('swig -version 1>%s 2>%s' % (os.devnull, os.devnull)) != 0:
     print("Please install swig (>= 3.0.10) and include it in your path.\n")
@@ -141,6 +148,13 @@ else:
             if not exclude:
                 CNTK_EXTRA_LIBRARIES.append(fn)
 
+project_name = 'cntk'
+if '--project-name' in sys.argv:
+    project_name_idx = sys.argv.index('--project-name')
+    project_name = sys.argv[project_name_idx + 1]
+    sys.argv.remove('--project-name')
+    sys.argv.pop(project_name_idx)
+
 WITH_DEBUG_SYMBOL=False
 LINKER_DEBUG_ARG=''
 if "--with-debug-symbol" in sys.argv:
@@ -249,9 +263,33 @@ cntk_install_requires = [
 if IS_PY2:
     cntk_install_requires.append('enum34>=1.1.6')
 
-setup(name="cntk",
+setup(name=project_name,
       version=os.environ['CNTK_VERSION'],
       url="http://cntk.ai",
+      description = 'CNTK is an open-source, commercial-grade deep learning framework.',
+      long_description = read_file('setup_py_long_description.md'),
+      author = 'Microsoft Corporation',
+      author_email = 'ai-opensource@microsoft.com',
+      license='MIT',
+      keywords = 'cntk cognitivetoolkit deeplearning tensor',
+      classifiers = [
+          'Development Status :: 5 - Production/Stable',
+          'License :: OSI Approved :: MIT License',
+          'Intended Audience :: Developers',
+          'Intended Audience :: Education',
+          'Intended Audience :: Science/Research',
+          'Programming Language :: Python :: 2',
+          'Programming Language :: Python :: 2.7',
+          'Programming Language :: Python :: 3',
+          'Programming Language :: Python :: 3.5',
+          'Programming Language :: Python :: 3.6',
+          'Topic :: Scientific/Engineering',
+          'Topic :: Scientific/Engineering :: Mathematics',
+          'Topic :: Scientific/Engineering :: Artificial Intelligence',
+          'Topic :: Software Development',
+          'Topic :: Software Development :: Libraries',
+          'Topic :: Software Development :: Libraries :: Python Modules',
+      ],
       ext_modules=[cntk_module],
       packages=packages,
       install_requires=cntk_install_requires,
